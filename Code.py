@@ -1,9 +1,26 @@
+#!/usr/bin/env python3
+# main.py
 import hashlib
-from lista_contraseñas import passwords 
+import random
+import time
+import os
+import sys
 
-def sha256_hash(texto):
-    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+# -------------------------------
+# CONFIGURACIÓN
+# -------------------------------
+LISTA_PWD_FILE = "Lista Contraseñas.txt"   # tu archivo con: passwords = [ ... ]
+TEST_MODE = False                          # True = prueba rápida con rango reducido
+TEST_MAX_NUMBER = 100_000                  # rango reducido para pruebas
+RANDOM_COUNT = 50                          # cantidad de números aleatorios
+RANDOM_MIN = 1
+RANDOM_MAX = 100_000_000                   # rango real pedido
+YEARS_START = 1995
+YEARS_END = 2025                           # inclusive
 
+# -------------------------------
+# Hashes objetivo (lista completa que pediste)
+# -------------------------------
 hashes_objetivo = {
     "290e1fc4609f8c2af910ad751d9b7d1d737cd594361cb75a7ac076ca8eff5c69",
     "ee7942eac05f5f77a2dc0802c09b1f90266bde86e85fd01ae1d507fb8c096bc1",
@@ -36,45 +53,164 @@ hashes_objetivo = {
     "f7ca254a1ac6bbabec4ecfe50911783036a24c20758742308d9f778aff38869f"
 }
 
-def ataque_diccionario():
+# -------------------------------
+# Utilidades
+# -------------------------------
+def sha256_hash(texto: str) -> str:
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+def load_passwords_from_python_list_file(path: str):
+    """
+    Lee un archivo que contiene una definición Python: passwords = [ ... ]
+    y ejecuta su contenido de forma segura en un namespace local para obtener la variable 'passwords'.
+    Nota: exec() se usa porque el usuario mantiene el archivo en formato lista Python.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"No se encontró el archivo: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        contenido = f.read()
+    local_vars = {}
+    # Ejecutar en un namespace controlado
+    exec(contenido, {}, local_vars)
+    if "passwords" not in local_vars:
+        raise ValueError("El archivo no define la variable 'passwords'.")
+    return local_vars["passwords"]
+
+# -------------------------------
+# Programa 1: Ataque de diccionario
+# -------------------------------
+def ataque_diccionario(passwords, hashes_objetivo_set):
     resultados = []
+    encontrados_hashes = set()
     for i, base in enumerate(passwords):
-        for year in range(1995, 2026):
-            candidato = f"{base}{year}*"
+        # Asegurarse que base sea str
+        base_str = str(base)
+        for year in range(YEARS_START, YEARS_END + 1):
+            candidato = f"{base_str}{year}*"
             h = sha256_hash(candidato)
-            if h in hashes_objetivo:
+            if h in hashes_objetivo_set and h not in encontrados_hashes:
+                encontrados_hashes.add(h)
                 resultados.append({
                     "hash": h,
                     "contraseña": candidato,
-                    "posicion_lista": i+1,
-                    "base": base
+                    "posicion_lista": i + 1,
+                    "base": base_str,
+                    "year": year
                 })
+        # Si ya encontramos todos los hashes, podemos salir temprano
+        if encontrados_hashes == hashes_objetivo_set:
+            return resultados
     return resultados
 
-def mostrar_no_descubiertos(resultados, hashes_objetivo):
-    # Extraer los hashes que sí fueron encontrados
+# -------------------------------
+# Mostrar hashes no descubiertos
+# -------------------------------
+def mostrar_no_descubiertos(resultados, hashes_objetivo_set):
     encontrados = {r["hash"] for r in resultados}
-    # Calcular la diferencia
-    no_descubiertos = hashes_objetivo - encontrados
-
+    no_descubiertos = hashes_objetivo_set - encontrados
     print("\n=== Hashes NO descubiertos ===")
     if no_descubiertos:
-        for h in no_descubiertos:
+        for h in sorted(no_descubiertos):
             print(h)
     else:
         print("Todos los hashes fueron descubiertos.")
 
+# -------------------------------
+# Programa 2: Análisis de rendimiento (números aleatorios)
+# -------------------------------
+def analisis_rendimiento(full_range=True):
+    # 1) Generar 50 números aleatorios
+    max_number = RANDOM_MAX if full_range else TEST_MAX_NUMBER
+    if RANDOM_COUNT > max_number:
+        raise ValueError("RANDOM_COUNT es mayor que el rango máximo.")
+    numeros = random.sample(range(RANDOM_MIN, max_number + 1), RANDOM_COUNT)
+    hashes_random = {sha256_hash(str(n)): n for n in numeros}  # map hash -> original number
+    print(f"\nGenerados {len(numeros)} números aleatorios (muestra 5): {numeros[:5]} ...")
+    print(f"Rango de búsqueda: 1 .. {max_number}")
+
+    # 2) Recorrer todos los números y comparar
+    inicio = time.time()
+    encontrados = {}
+    total_checked = 0
+    # Para permitir ver progreso en rangos grandes, imprimimos cada cierto bloque
+    progress_block = 1_000_000 if full_range else 10_000
+
+    for n in range(1, max_number + 1):
+        total_checked += 1
+        h = sha256_hash(str(n))
+        if h in hashes_random and h not in encontrados:
+            encontrados[h] = n
+            print(f"Coincidencia: número {n} (hash de uno de los aleatorios).")
+            # Si encontramos todas las 50, podemos terminar temprano
+            if len(encontrados) == len(hashes_random):
+                break
+        if total_checked % progress_block == 0:
+            elapsed = time.time() - inicio
+            print(f"Checked {total_checked} numbers, elapsed {elapsed:.1f}s")
+
+    fin = time.time()
+    elapsed_total = fin - inicio
+    print(f"\nTiempo total de búsqueda: {elapsed_total:.2f} segundos")
+    print(f"Total números verificados: {total_checked}")
+    print(f"Coincidencias encontradas: {len(encontrados)} de {len(hashes_random)}")
+    if encontrados:
+        for h, n in encontrados.items():
+            print(f"Hash: {h}  -> número original: {n}")
+    else:
+        print("No se encontraron coincidencias entre los 50 hashes y el rango verificado.")
+
+    # Devolver métricas
+    return {
+        "elapsed_seconds": elapsed_total,
+        "checked": total_checked,
+        "found_map": encontrados,
+        "random_numbers": numeros
+    }
+
+# -------------------------------
+# MAIN
+# -------------------------------
+def main():
+    print("Iniciando programa: Ataque diccionario + Análisis de rendimiento")
+    # Cargar lista de contraseñas desde tu archivo en formato Python list
+    try:
+        passwords = load_passwords_from_python_list_file(LISTA_PWD_FILE)
+        print(f"Cargadas {len(passwords)} contraseñas desde '{LISTA_PWD_FILE}'.")
+    except Exception as e:
+        print("Error cargando lista de contraseñas:", e)
+        sys.exit(1)
+
+    hashes_set = set(hashes_objetivo)
+
+    # Programa 1: ataque de diccionario
+    print("\n=== Programa 1: Ataque de diccionario (variantes año + '*') ===")
+    inicio1 = time.time()
+    resultados = ataque_diccionario(passwords, hashes_set)
+    fin1 = time.time()
+    print(f"Tiempo ataque diccionario: {fin1 - inicio1:.2f} segundos")
+    if resultados:
+        print(f"Se encontraron {len(resultados)} coincidencias:")
+        for r in resultados:
+            print(f"- Hash: {r['hash']}")
+            print(f"  Contraseña encontrada: {r['contraseña']}")
+            print(f"  Base: {r['base']} (posición {r['posicion_lista']}) año: {r['year']}")
+    else:
+        print("No se encontraron coincidencias en el ataque de diccionario.")
+
+    mostrar_no_descubiertos(resultados, hashes_set)
+
+    # Programa 2: análisis de rendimiento
+    print("\n=== Programa 2: Análisis de rendimiento (números aleatorios) ===")
+    if TEST_MODE:
+        print("TEST_MODE activado: usando rango reducido para pruebas.")
+    metrics = analisis_rendimiento(full_range=not TEST_MODE)
+
+    # Resumen final
+    print("\n=== Resumen final ===")
+    print(f"Ataque diccionario: {len(resultados)} hashes descubiertos.")
+    no_desc = hashes_set - {r["hash"] for r in resultados}
+    print(f"Hashes no descubiertos: {len(no_desc)}")
+    print(f"Analisis rendimiento: tiempo {metrics['elapsed_seconds']:.2f}s, verificados {metrics['checked']} números, coincidencias {len(metrics['found_map'])}")
 
 if __name__ == "__main__":
-    resultados = ataque_diccionario()
-    print("\n=== Resultados Ataque Diccionario ===")
-    if resultados:
-        for r in resultados:
-            print(f"Hash: {r['hash']}")
-            print(f"Contraseña encontrada: {r['contraseña']}")
-            print(f"Base: {r['base']} (posición {r['posicion_lista']} en lista)\n")
-    else:
-        print("No se encontraron coincidencias.")
-
-    # Mostrar los que faltaron
-    mostrar_no_descubiertos(resultados, hashes_objetivo)
+    main()
