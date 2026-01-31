@@ -2,8 +2,19 @@ import hashlib
 import time
 import random
 
+def mostrar_resumen(total, encontrados, pendientes):
+    print("RESUMEN DEL ATAQUE")
+    print(f"Total de hashes analizados: {total}")
+    print(f"Hashes descifrados: {len(encontrados)}")
+    print(f"Hashes NO encontrados: {len(pendientes)}")
+    
+    if pendientes:
+        print("\nHashes que no pudieron ser descifrados:")
+        for h in pendientes:
+            print(f"- {h}")
+
 def crack_pollito_passwords(dictionary_path):
-    # [cite_start]Lista de hashes (SHA-256) proporcionada por Pollito con Papas [cite: 21-44]
+    # Lista de hashes (SHA-256) proporcionada por Pollito con Papas [cite: 21-44]
     target_hashes = [
         "290e1fc4609f8c2af910ad751d9b7d1d737cd594361cb75a7ac076ca8eff5c69",
         "ee7942eac05f5f77a2dc0802c09b1f90266bde86e85fd01ae1d507fb8c096bc1",
@@ -48,7 +59,7 @@ def crack_pollito_passwords(dictionary_path):
                 base_word = line.strip()
                 if not base_word: continue
 
-                # [cite_start]Probar cada palabra con el patrón: palabra + año(1995-2026) + * [cite: 11]
+                # Probar cada palabra con el patrón: palabra + año(1995-2026) + * [cite: 11]
                 for year in range(1995, 2027):
                     candidate = f"{base_word}{year}*"
                     candidate_hash = hashlib.sha256(candidate.encode()).hexdigest()
@@ -63,65 +74,72 @@ def crack_pollito_passwords(dictionary_path):
                         if not hashes_to_crack:
                             print("\nSe han descifrado todos los hashes")
                             mostrar_resumen(total_initial, found_info, hashes_to_crack)
-                            return # Termina la función por completo
+                            return 
 
-            # Si el archivo termina y aún quedan hashes sin encontrar
             print("\n Fin del archivo: No se encontraron más coincidencias")
             mostrar_resumen(total_initial, found_info, hashes_to_crack)
 
     except FileNotFoundError:
         print(f"Error: No se encontró el archivo '{dictionary_path}'.")
 
-def mostrar_resumen(total, encontrados, pendientes):
-
-    print("RESUMEN DEL ATAQUE")
-
-    print(f"Total de hashes analizados: {total}")
-    print(f"Hashes descifrados: {len(encontrados)}")
-    print(f"Hashes NO encontrados: {len(pendientes)}")
-    
-    if pendientes:
-        print("\nHashes que no pudieron ser descifrados:")
-        for h in pendientes:
-            print(f"- {h}")
-
-
-# Ejecución
-crack_pollito_passwords("Pwdb_top-10000000.txt")
-
-
 def performance_test():
-    # Seleccionar 50 números aleatorios (1 a 100M) 
-    random_numbers = [str(random.randint(1, 100000000)) for _ in range(50)]
+    # Seleccionar 50 números aleatorios (1 a 100M) [cite: 48]
+    random_raw = [random.randint(1, 100000000) for _ in range(50)]
     
-    # Generar sus hashes SHA-256 para la búsqueda 
-    target_hashes = {hashlib.sha256(n.encode()).hexdigest() for n in random_numbers}
+    # Mapeo de número -> hash para mostrar cuál se encontró
+    num_to_hash = {str(n): hashlib.sha256(str(n).encode()).hexdigest() for n in random_raw}
+    target_hashes = set(num_to_hash.values())
     
-    print("Iniciando prueba de rendimiento: 1 a 100,000,000")
+    print("\nIniciando prueba de rendimiento: 1 a 100,000,000")
     print(f"Buscando {len(target_hashes)} hashes específicos...")
     
     start_time = time.time()
     found_count = 0
+    step = 10000000
 
-    # Fuerza bruta numérica intensiva 
+    # Fuerza bruta numérica intensiva [cite: 50]
     for i in range(1, 100000001):
-        # Generar hash del número actual
-        current_hash = hashlib.sha256(str(i).encode()).hexdigest()
+        current_str = str(i)
+        current_hash = hashlib.sha256(current_str.encode()).hexdigest()
         
         if current_hash in target_hashes:
             found_count += 1
+            print(f"-> ¡Coincidencia encontrada! Número: {current_str} | Hash: {current_hash}")
             if found_count == 50:
-                break # Detener al encontrar todos para reportar el tiempo final
+                break 
         
-        # Monitor de progreso simple
-        if i % 20000000 == 0:
-            print(f"Progreso: {(i/100000000)*100:.0f}%...")
+        # Monitor de progreso por rangos numéricos
+        if i % step == 0:
+            print(f"Rango alcanzado: {i-step+1} - {i}")
 
     total_time = time.time() - start_time
     
     print(f"\n Resultados del rendimiento")
     print(f"Tiempo total: {total_time:.2f} segundos")
-    print(f"Hashes encontrados: {found_count}")
+    print(f"Hashes encontrados: {found_count}/50")
+    return total_time
 
-# Ejecución del programa 2
-performance_test()
+if __name__ == "__main__":
+    global_start = time.time()
+    
+    # Ejecución Programa 1
+    print("=== EJECUTANDO PROGRAMA 1 (DICCIONARIO) ===")
+    p1_start = time.time()
+    crack_pollito_passwords("Pwdb_top-10000000.txt")
+    p1_end = time.time()
+    time_p1 = p1_end - p1_start
+    
+    # Ejecución Programa 2
+    print("\n=== EJECUTANDO PROGRAMA 2 (RENDIMIENTO) ===")
+    time_p2 = performance_test()
+    
+    global_end = time.time()
+    time_total = global_end - global_start
+    
+    print("\n" + "="*40)
+    print("REPORTE FINAL DE TIEMPOS")
+    print("="*40)
+    print(f"Tiempo Programa 1: {time_p1:.2f} segundos")
+    print(f"Tiempo Programa 2: {time_p2:.2f} segundos")
+    print(f"Tiempo Total (Ambos): {time_total:.2f} segundos")
+    print("="*40)
