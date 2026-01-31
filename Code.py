@@ -51,6 +51,19 @@ def ataque_diccionario():
                 })
     return resultados
 
+def mostrar_no_descubiertos(resultados, hashes_objetivo):
+    # Extraer los hashes que sí fueron encontrados
+    encontrados = {r["hash"] for r in resultados}
+    # Calcular la diferencia
+    no_descubiertos = hashes_objetivo - encontrados
+
+    print("\n=== Hashes NO descubiertos ===")
+    if no_descubiertos:
+        for h in no_descubiertos:
+            print(h)
+    else:
+        print("Todos los hashes fueron descubiertos.")
+
 
 if __name__ == "__main__":
     resultados = ataque_diccionario()
@@ -62,3 +75,6 @@ if __name__ == "__main__":
             print(f"Base: {r['base']} (posición {r['posicion_lista']} en lista)\n")
     else:
         print("No se encontraron coincidencias.")
+
+    # Mostrar los que faltaron
+    mostrar_no_descubiertos(resultados, hashes_objetivo)
