@@ -42,7 +42,7 @@ def crack_pollito_passwords(dictionary_path):
 
     try:
         with open(dictionary_path, 'r', encoding='latin-1') as file:
-            print(f"--- Iniciando ataque con diccionario: {dictionary_path} ---")
+            print(f"Iniciando búsqueda con diccionario: {dictionary_path}")
 
             for index, line in enumerate(file):
                 base_word = line.strip()
@@ -54,28 +54,28 @@ def crack_pollito_passwords(dictionary_path):
                     candidate_hash = hashlib.sha256(candidate.encode()).hexdigest()
 
                     if candidate_hash in hashes_to_crack:
-                        res = f"¡ENCONTRADA! Posición: {index + 1} | Palabra: {base_word} | Completa: {candidate} | Hash: {candidate_hash}"
+                        res = f"Posición: {index + 1}, Palabra: {base_word}, Completa: {candidate}, Hash: {candidate_hash}"
                         print(res)
                         found_info.append(res)
                         hashes_to_crack.remove(candidate_hash)
 
                         # VERIFICACIÓN DE PARADA: Si ya no quedan hashes por encontrar, salimos
                         if not hashes_to_crack:
-                            print("\n--- ÉXITO TOTAL: Se han descifrado todos los hashes. Deteniendo programa. ---")
+                            print("\nSe han descifrado todos los hashes")
                             mostrar_resumen(total_initial, found_info, hashes_to_crack)
                             return # Termina la función por completo
 
             # Si el archivo termina y aún quedan hashes sin encontrar
-            print("\n--- FIN DEL ARCHIVO: No se encontraron más coincidencias. ---")
+            print("\n Fin del archivo: No se encontraron más coincidencias")
             mostrar_resumen(total_initial, found_info, hashes_to_crack)
 
     except FileNotFoundError:
         print(f"Error: No se encontró el archivo '{dictionary_path}'.")
 
 def mostrar_resumen(total, encontrados, pendientes):
-    print("\n" + "="*50)
+
     print("RESUMEN DEL ATAQUE")
-    print("="*50)
+
     print(f"Total de hashes analizados: {total}")
     print(f"Hashes descifrados: {len(encontrados)}")
     print(f"Hashes NO encontrados: {len(pendientes)}")
@@ -84,17 +84,17 @@ def mostrar_resumen(total, encontrados, pendientes):
         print("\nHashes que no pudieron ser descifrados:")
         for h in pendientes:
             print(f"- {h}")
-    print("="*50)
+
 
 # Ejecución
 crack_pollito_passwords("Pwdb_top-10000000.txt")
 
 
 def performance_test():
-    # 1. Seleccionar 50 números aleatorios (1 a 100M) [cite: 48]
+    # Seleccionar 50 números aleatorios (1 a 100M) 
     random_numbers = [str(random.randint(1, 100000000)) for _ in range(50)]
     
-    # 2. Generar sus hashes SHA-256 para la búsqueda [cite: 49]
+    # Generar sus hashes SHA-256 para la búsqueda 
     target_hashes = {hashlib.sha256(n.encode()).hexdigest() for n in random_numbers}
     
     print("Iniciando prueba de rendimiento: 1 a 100,000,000")
@@ -103,7 +103,7 @@ def performance_test():
     start_time = time.time()
     found_count = 0
 
-    # 3. Fuerza bruta numérica intensiva [cite: 50]
+    # Fuerza bruta numérica intensiva 
     for i in range(1, 100000001):
         # Generar hash del número actual
         current_hash = hashlib.sha256(str(i).encode()).hexdigest()
@@ -119,10 +119,9 @@ def performance_test():
 
     total_time = time.time() - start_time
     
-    print(f"\n--- RESULTADOS DE RENDIMIENTO ---")
+    print(f"\n Resultados del rendimiento")
     print(f"Tiempo total: {total_time:.2f} segundos")
     print(f"Hashes encontrados: {found_count}")
-    print(f"---------------------------------")
 
 # Ejecución del programa 2
 performance_test()
