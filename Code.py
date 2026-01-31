@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
-# main.py
 import hashlib
-import random
 import time
 import os
 import sys
 import ast
+import re
+import itertools
+import string
 
 # -------------------------------
 # CONFIGURACIÓN
 # -------------------------------
-LISTA_PWD_FILE = "100k-most-used-passwords-NCSC.txt"   # tu archivo con: passwords = [ ... ]
-TEST_MODE = False                          # True = prueba rápida con rango reducido
-TEST_MAX_NUMBER = 100_000                  # rango reducido para pruebas
-RANDOM_COUNT = 50                          # cantidad de números aleatorios
-RANDOM_MIN = 1
-RANDOM_MAX = 100_000_000                   # rango real pedido
+LISTA_PWD_FILE = "hola.txt"   
 YEARS_START = 1995
-YEARS_END = 2025                           # inclusive
+YEARS_END = 2025
+# Caracteres para Fuerza Bruta (ajustar según sospecha: letras, números, etc.)
+CHARS_BRUTE = string.ascii_lowercase + string.digits 
 
 # -------------------------------
-# Hashes objetivo (lista completa que pediste)
+# Hashes objetivo
 # -------------------------------
 hashes_objetivo = {
     "290e1fc4609f8c2af910ad751d9b7d1d737cd594361cb75a7ac076ca8eff5c69",
@@ -60,232 +58,93 @@ hashes_objetivo = {
 def sha256_hash(texto: str) -> str:
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
-import ast
-import os
-import re
-
-def load_passwords_from_python_list_file(path: str):
-    """
-    Carga contraseñas desde un archivo que puede estar en varios formatos:
-    - Contener una asignación Python: passwords = [ ... ]
-    - Contener solo la lista literal: [ "a", "b", ... ]
-    - Contener elementos entre comillas separados por comas
-    - Contener una contraseña por línea, posiblemente numeradas ("1. 123456")
-    Devuelve una lista de strings.
-    """
+def load_passwords(path: str):
     if not os.path.exists(path):
-        raise FileNotFoundError(f"No se encontró el archivo: {path}")
-
+        raise FileNotFoundError(f"Archivo no encontrado: {path}")
     with open(path, "r", encoding="utf-8") as f:
         contenido = f.read()
-
-    # 1) Intentar literal_eval directo (archivo = lista literal o asignación)
-    try:
-        # Si el archivo contiene "passwords = [...]", extraer RHS primero
-        if "passwords" in contenido and "=" in contenido:
-            # localizar '=' después de 'passwords'
-            idx = contenido.find("passwords")
-            eq_idx = contenido.find("=", idx)
-            if eq_idx != -1:
-                rhs = contenido[eq_idx + 1:].strip()
-            else:
-                rhs = contenido
-        else:
-            rhs = contenido.strip()
-
-        # Si rhs empieza con algo que parece lista, intentar evaluar
-        if rhs.startswith("[") or rhs.startswith("passwords") or rhs.startswith("'") or rhs.startswith('"'):
-            # si rhs no empieza con '[' pero contiene '[', intentar aislar la lista
-            if not rhs.startswith("[") and "[" in rhs:
-                start = rhs.find("[")
-                # buscar cierre balanceado
-                depth = 0
-                end = None
-                for i, ch in enumerate(rhs[start:], start):
-                    if ch == "[":
-                        depth += 1
-                    elif ch == "]":
-                        depth -= 1
-                        if depth == 0:
-                            end = i
-                            break
-                if end is not None:
-                    rhs = rhs[start:end+1]
-            passwords = ast.literal_eval(rhs)
-            # validar
-            if isinstance(passwords, list) and all(isinstance(p, str) for p in passwords):
-                return passwords
-            # si no es lista de strings, continuar a otros métodos
-    except Exception:
-        pass  # seguimos a otros intentos
-
-    # 2) Intentar extraer todas las cadenas entre comillas ( "..." o '...' )
+    # Intenta extraer strings de la lista python o lineas simples
     quoted = re.findall(r'["\']([^"\']{1,200})["\']', contenido)
-    if quoted:
-        # Filtrar elementos que parezcan contraseñas (evitar capturar comentarios largos)
-        # Tomamos los que no contienen saltos de línea y no son demasiado largos
-        candidates = [q.strip() for q in quoted if "\n" not in q and len(q) <= 200]
-        if candidates:
-            return candidates
-
-    # 3) Si no hay comillas, procesar línea por línea (el caso de lista numerada)
-    lines = contenido.splitlines()
-    cleaned = []
-    for line in lines:
-        if not line:
-            continue
-        s = line.strip()
-        # eliminar numeración al inicio: "1. ", "1) ", "1 - ", "1\t"
-        s = re.sub(r'^\s*\d+\s*[\.\)\-\:]\s*', '', s)
-        # eliminar comas finales y comas intermedias si la línea es "a, b, c" -> tomar cada parte
-        if "," in s and not (s.startswith('"') or s.startswith("'")):
-            parts = [p.strip().strip('"\'' ) for p in s.split(",") if p.strip()]
-            cleaned.extend(parts)
-            continue
-        # quitar comillas sobrantes y espacios
-        s = s.strip().strip('"\'')
-
-        # si queda algo razonable, añadir
-        if s:
-            cleaned.append(s)
-
-    # eliminar duplicados manteniendo orden
-    seen = set()
-    result = []
-    for p in cleaned:
-        if p not in seen:
-            seen.add(p)
-            result.append(p)
-
-    if not result:
-        raise ValueError("No se pudo extraer la lista de contraseñas del archivo. Revisa el formato.")
-    return result
-
+    if quoted: return list(set(quoted))
+    return [line.strip() for line in contenido.splitlines() if line.strip()]
 
 # -------------------------------
-# Programa 1: Ataque de diccionario
+# ATAQUE 1: DICCIONARIO + REGLAS
 # -------------------------------
-def ataque_diccionario(passwords, hashes_objetivo_set):
-    resultados = []
-    encontrados_hashes = set()
-    for i, base in enumerate(passwords):
-        base_str = str(base)
-        for year in range(YEARS_START, YEARS_END + 1):
-            candidato = f"{base_str}{year}*"
-            h = sha256_hash(candidato)
-            if h in hashes_objetivo_set and h not in encontrados_hashes:
-                encontrados_hashes.add(h)
-                resultados.append({
-                    "hash": h,
-                    "contraseña": candidato,
-                    "posicion_lista": i + 1,
-                    "base": base_str,
-                    "year": year
-                })
-        if encontrados_hashes == hashes_objetivo_set:
-            return resultados
-    return resultados
-
-# -------------------------------
-# Mostrar hashes no descubiertos
-# -------------------------------
-def mostrar_no_descubiertos(resultados, hashes_objetivo_set):
-    encontrados = {r["hash"] for r in resultados}
-    no_descubiertos = hashes_objetivo_set - encontrados
-    print("\n=== Hashes NO descubiertos ===")
-    if no_descubiertos:
-        for h in sorted(no_descubiertos):
-            print(h)
-    else:
-        print("Todos los hashes fueron descubiertos.")
-
-# -------------------------------
-# Programa 2: Análisis de rendimiento (números aleatorios)
-# -------------------------------
-def analisis_rendimiento(full_range=True):
-    max_number = RANDOM_MAX if full_range else TEST_MAX_NUMBER
-    if RANDOM_COUNT > max_number:
-        raise ValueError("RANDOM_COUNT es mayor que el rango máximo.")
-    numeros = random.sample(range(RANDOM_MIN, max_number + 1), RANDOM_COUNT)
-    hashes_random = {sha256_hash(str(n)): n for n in numeros}
-    print(f"\nGenerados {len(numeros)} números aleatorios (muestra 5): {numeros[:5]} ...")
-    print(f"Rango de búsqueda: 1 .. {max_number}")
-
-    inicio = time.time()
+def ataque_diccionario(passwords, hashes_pendientes):
     encontrados = {}
-    total_checked = 0
-    progress_block = 1_000_000 if full_range else 10_000
+    print(f"[*] Probando {len(passwords)} palabras con sufijos de año...")
+    for base in passwords:
+        for year in range(YEARS_START, YEARS_END + 1):
+            candidato = f"{base}{year}*"
+            h = sha256_hash(candidato)
+            if h in hashes_pendientes:
+                encontrados[h] = candidato
+                print(f"[!] ENCONTRADA (Diccionario): {candidato}")
+                hashes_pendientes.remove(h)
+                if not hashes_pendientes: return encontrados
+    return encontrados
 
-    for n in range(1, max_number + 1):
-        total_checked += 1
-        h = sha256_hash(str(n))
-        if h in hashes_random and h not in encontrados:
-            encontrados[h] = n
-            print(f"Coincidencia: número {n} (hash de uno de los aleatorios).")
-            if len(encontrados) == len(hashes_random):
-                break
-        if total_checked % progress_block == 0:
-            elapsed = time.time() - inicio
-            print(f"Checked {total_checked} numbers, elapsed {elapsed:.1f}s")
+# -------------------------------
+# ATAQUE 2: FUERZA BRUTA (Para las que no están en RockYou)
+# -------------------------------
+def ataque_fuerza_bruta(hashes_pendientes, max_length=8):
+    """
+    Intenta todas las combinaciones posibles de caracteres.
+    ADVERTENCIA: Aumentar max_length incrementa el tiempo exponencialmente.
+    """
+    encontrados = {}
+    print(f"[*] Iniciando Fuerza Bruta para {len(hashes_pendientes)} hashes restantes...")
+    print(f"[*] Esto puede tardar dependiendo de la longitud de la contraseña.")
 
-    fin = time.time()
-    elapsed_total = fin - inicio
-    print(f"\nTiempo total de búsqueda: {elapsed_total:.2f} segundos")
-    print(f"Total números verificados: {total_checked}")
-    print(f"Coincidencias encontradas: {len(encontrados)} de {len(hashes_random)}")
-    if encontrados:
-        for h, n in encontrados.items():
-            print(f"Hash: {h}  -> número original: {n}")
-    else:
-        print("No se encontraron coincidencias entre los 50 hashes y el rango verificado.")
-
-    return {
-        "elapsed_seconds": elapsed_total,
-        "checked": total_checked,
-        "found_map": encontrados,
-        "random_numbers": numeros
-    }
+    for length in range(1, max_length + 1):
+        print(f"    - Probando longitud: {length}...")
+        for combination in itertools.product(CHARS_BRUTE, repeat=length):
+            candidato = "".join(combination)
+            h = sha256_hash(candidato)
+            if h in hashes_pendientes:
+                encontrados[h] = candidato
+                print(f"[!] ENCONTRADA (Fuerza Bruta): {candidato}")
+                hashes_pendientes.remove(h)
+                if not hashes_pendientes: return encontrados
+    return encontrados
 
 # -------------------------------
 # MAIN
 # -------------------------------
 def main():
-    print("Iniciando programa: Ataque diccionario + Análisis de rendimiento")
+    inicio_global = time.time()
+    hashes_pendientes = set(hashes_objetivo)
+    todas_encontradas = {}
+
+    # 1. Cargar diccionario
     try:
-        passwords = load_passwords_from_python_list_file(LISTA_PWD_FILE)
-        print(f"Cargadas {len(passwords)} contraseñas desde '{LISTA_PWD_FILE}'.")
+        dict_pwds = load_passwords(LISTA_PWD_FILE)
+        # 2. Ejecutar ataque diccionario
+        res_dict = ataque_diccionario(dict_pwds, hashes_pendientes)
+        todas_encontradas.update(res_dict)
     except Exception as e:
-        print("Error cargando lista de contraseñas:", e)
-        sys.exit(1)
+        print(f"[!] No se pudo cargar el diccionario: {e}")
 
-    hashes_set = set(hashes_objetivo)
+    # 3. Si faltan hashes, ejecutar Fuerza Bruta
+    if hashes_pendientes:
+        print(f"\n[?] Quedan {len(hashes_pendientes)} hashes por descifrar.")
+        res_brute = ataque_fuerza_bruta(hashes_pendientes, max_length=6) # Ajusta max_length
+        todas_encontradas.update(res_brute)
 
-    print("\n=== Programa 1: Ataque de diccionario (variantes año + '*') ===")
-    inicio1 = time.time()
-    resultados = ataque_diccionario(passwords, hashes_set)
-    fin1 = time.time()
-    print(f"Tiempo ataque diccionario: {fin1 - inicio1:.2f} segundos")
-    if resultados:
-        print(f"Se encontraron {len(resultados)} coincidencias:")
-        for r in resultados:
-            print(f"- Hash: {r['hash']}")
-            print(f"  Contraseña encontrada: {r['contraseña']}")
-            print(f"  Base: {r['base']} (posición {r['posicion_lista']}) año: {r['year']}")
-    else:
-        print("No se encontraron coincidencias en el ataque de diccionario.")
-
-    mostrar_no_descubiertos(resultados, hashes_set)
-
-    print("\n=== Programa 2: Análisis de rendimiento (números aleatorios) ===")
-    if TEST_MODE:
-        print("TEST_MODE activado: usando rango reducido para pruebas.")
-    metrics = analisis_rendimiento(full_range=not TEST_MODE)
-
-    print("\n=== Resumen final ===")
-    print(f"Ataque diccionario: {len(resultados)} hashes descubiertos.")
-    no_desc = hashes_set - {r["hash"] for r in resultados}
-    print(f"Hashes no descubiertos: {len(no_desc)}")
-    print(f"Analisis rendimiento: tiempo {metrics['elapsed_seconds']:.2f}s, verificados {metrics['checked']} números, coincidencias {len(metrics['found_map'])}")
+    # 4. Resumen Final
+    fin_global = time.time()
+    print("\n" + "="*30)
+    print("RESUMEN DE RESULTADOS")
+    print("="*30)
+    print(f"Tiempo total: {fin_global - inicio_global:.2f}s")
+    print(f"Hashes totales: {len(hashes_objetivo)}")
+    print(f"Descifrados: {len(todas_encontradas)}")
+    
+    if hashes_pendientes:
+        print("\nHashes no encontrados (necesitas un rango de Fuerza Bruta mayor o más reglas):")
+        for h in hashes_pendientes:
+            print(f"- {h}")
 
 if __name__ == "__main__":
     main()
