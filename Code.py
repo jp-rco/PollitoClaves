@@ -1,7 +1,9 @@
 import hashlib
+import time
+import random
 
 def crack_pollito_passwords(dictionary_path):
-    # Lista de hashes (SHA-256) proporcionada por Pollito con Papas
+    # [cite_start]Lista de hashes (SHA-256) proporcionada por Pollito con Papas [cite: 21-44]
     target_hashes = [
         "290e1fc4609f8c2af910ad751d9b7d1d737cd594361cb75a7ac076ca8eff5c69",
         "ee7942eac05f5f77a2dc0802c09b1f90266bde86e85fd01ae1d507fb8c096bc1",
@@ -34,50 +36,93 @@ def crack_pollito_passwords(dictionary_path):
         "f7ca254a1ac6bbabec4ecfe50911783036a24c20758742308d9f778aff38869f"
     ]
 
-    # Convertimos a set para búsquedas más rápidas y seguimiento de hallazgos
     hashes_to_crack = set(target_hashes)
+    total_initial = len(target_hashes)
     found_info = []
-    
+
     try:
-        # Abrimos hola.txt e iteramos línea por línea sin límite de palabras
         with open(dictionary_path, 'r', encoding='latin-1') as file:
             print(f"--- Iniciando ataque con diccionario: {dictionary_path} ---")
-            
+
             for index, line in enumerate(file):
                 base_word = line.strip()
                 if not base_word: continue
 
-                # Probar con años entre 1995 y 2026 seguidos de '*'
+                # [cite_start]Probar cada palabra con el patrón: palabra + año(1995-2026) + * [cite: 11]
                 for year in range(1995, 2027):
                     candidate = f"{base_word}{year}*"
                     candidate_hash = hashlib.sha256(candidate.encode()).hexdigest()
 
                     if candidate_hash in hashes_to_crack:
-                        # Registro de hallazgo y eliminación del set de pendientes
-                        res = f"Posición: {index + 1} | Palabra: {base_word} | Completa: {candidate} | Hash: {candidate_hash}"
+                        res = f"¡ENCONTRADA! Posición: {index + 1} | Palabra: {base_word} | Completa: {candidate} | Hash: {candidate_hash}"
                         print(res)
                         found_info.append(res)
-                        hashes_to_crack.remove(candidate_hash) # Ya no buscamos este hash
+                        hashes_to_crack.remove(candidate_hash)
 
-        # --- SECCIÓN DE REPORTES FINALES ---
-        print("\n" + "="*50)
-        print("RESUMEN DEL ATAQUE")
-        print("="*50)
-        print(f"Total de hashes analizados: {len(target_hashes)}")
-        print(f"Hashes descifrados: {len(found_info)}")
-        print(f"Hashes NO encontrados: {len(hashes_to_crack)}")
-        
-        # Mostrar los que faltaron [NUEVA FUNCIONALIDAD]
-        if hashes_to_crack:
-            print("\nLISTA DE HASHES QUE NO FUERON ENCONTRADOS:")
-            for h in hashes_to_crack:
-                print(f"- {h}")
-        else:
-            print("\n¡Felicidades! Se descifraron todos los hashes.")
-        print("="*50)
+                        # VERIFICACIÓN DE PARADA: Si ya no quedan hashes por encontrar, salimos
+                        if not hashes_to_crack:
+                            print("\n--- ÉXITO TOTAL: Se han descifrado todos los hashes. Deteniendo programa. ---")
+                            mostrar_resumen(total_initial, found_info, hashes_to_crack)
+                            return # Termina la función por completo
+
+            # Si el archivo termina y aún quedan hashes sin encontrar
+            print("\n--- FIN DEL ARCHIVO: No se encontraron más coincidencias. ---")
+            mostrar_resumen(total_initial, found_info, hashes_to_crack)
 
     except FileNotFoundError:
-        print(f"Error: El archivo '{dictionary_path}' no existe en el directorio.")
+        print(f"Error: No se encontró el archivo '{dictionary_path}'.")
+
+def mostrar_resumen(total, encontrados, pendientes):
+    print("\n" + "="*50)
+    print("RESUMEN DEL ATAQUE")
+    print("="*50)
+    print(f"Total de hashes analizados: {total}")
+    print(f"Hashes descifrados: {len(encontrados)}")
+    print(f"Hashes NO encontrados: {len(pendientes)}")
+    
+    if pendientes:
+        print("\nHashes que no pudieron ser descifrados:")
+        for h in pendientes:
+            print(f"- {h}")
+    print("="*50)
 
 # Ejecución
 crack_pollito_passwords("Pwdb_top-10000000.txt")
+
+
+def performance_test():
+    # 1. Seleccionar 50 números aleatorios (1 a 100M) [cite: 48]
+    random_numbers = [str(random.randint(1, 100000000)) for _ in range(50)]
+    
+    # 2. Generar sus hashes SHA-256 para la búsqueda [cite: 49]
+    target_hashes = {hashlib.sha256(n.encode()).hexdigest() for n in random_numbers}
+    
+    print("Iniciando prueba de rendimiento: 1 a 100,000,000")
+    print(f"Buscando {len(target_hashes)} hashes específicos...")
+    
+    start_time = time.time()
+    found_count = 0
+
+    # 3. Fuerza bruta numérica intensiva [cite: 50]
+    for i in range(1, 100000001):
+        # Generar hash del número actual
+        current_hash = hashlib.sha256(str(i).encode()).hexdigest()
+        
+        if current_hash in target_hashes:
+            found_count += 1
+            if found_count == 50:
+                break # Detener al encontrar todos para reportar el tiempo final
+        
+        # Monitor de progreso simple
+        if i % 20000000 == 0:
+            print(f"Progreso: {(i/100000000)*100:.0f}%...")
+
+    total_time = time.time() - start_time
+    
+    print(f"\n--- RESULTADOS DE RENDIMIENTO ---")
+    print(f"Tiempo total: {total_time:.2f} segundos")
+    print(f"Hashes encontrados: {found_count}")
+    print(f"---------------------------------")
+
+# Ejecución del programa 2
+performance_test()
